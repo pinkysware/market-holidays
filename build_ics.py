@@ -98,9 +98,13 @@ def nyse_holidays(y):
 
 
 def nyse_early_closes(y):
-    """提前收盘（美东 13:00）。仅含规则明确的两类：感恩节次日、平安夜（若当天为工作日且未休市）"""
+    """提前收盘（美东 13:00）。三类：独立日前一天(7/3)、感恩节次日、平安夜
+    —— 均需当天为工作日且非休市日。"""
     closed = {d for d, _ in nyse_holidays(y)}
     out = []
+    july3 = date(y, 7, 3)
+    if july3.weekday() < 5 and july3 not in closed:
+        out.append((july3, "独立日前一天提前收盘 13:00 ET"))
     tg = nth_weekday(y, 11, 3, 4)
     after_tg = tg + timedelta(days=1)
     if after_tg.weekday() < 5 and after_tg not in closed:
@@ -108,9 +112,9 @@ def nyse_early_closes(y):
     xmas_eve = date(y, 12, 24)
     if xmas_eve.weekday() < 5 and xmas_eve not in closed:
         out.append((xmas_eve, "平安夜提前收盘 13:00 ET"))
-    return out
-# 注：独立日前一天（多为 7/3）NYSE 亦常提前收盘，但各年公告不一（2026 官方未列），
-#     需要的话在 nyse_early_closes 里补一条即可。
+    return sorted(out)
+# 注：7/3 提前收盘经 NYSE 官方日历确认（2025-07-03、2028-07-03 均为 13:00 收盘）。
+#     2029/2030 的 7/3 属按惯例推断（官方通常提前一年公布），届时以公告为准。
 
 
 # ============================================================
