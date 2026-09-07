@@ -1,0 +1,60 @@
+name: Refresh market holiday calendars
+
+on:
+  schedule:
+    - cron: "17 3 1 * *"     # 每月 1 号 UTC 03:17 跑一次
+    - cron: "23 3 1 12 *"    # 每年 12/1 额外跑一次（A股次年安排通常此时公布）
+  workflow_dispatch:          # 也能在网页端手动点 "Run workflow"
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Regenerate ICS files
+        run: python build_ics.py
+
+      - name: Commit if changed
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if [ -n "$(git status --porcelain '*.ics')" ]; then
+            git add *.ics
+            git commit -m "chore: refresh ICS $(date -u +%Y-%m-%d)"
+            git push
+            echo "CHANGED=1" >> $GITHUB_ENV
+          else
+            echo "CHANGED=0" >> $GITHUB_ENV
+          fi
+
+      - name: Purge jsDelivr cache
+        if: env.CHANGED == '1'
+        run: |
+          for f in cn-market-closed.ics cn-holidays-only.ics us-market-closed.ics us-early-close.ics; do
+            curl -sS -X POST "https://purge.jsdelivr.net/gh/${{ github.repository }}@main/$f" || true
+          done
+
+      # 每年 12 月提醒一次：A股次年休市安排需人工补进 build_ics.py 的 CN_CLOSED_RANGES
+      - name: Nudge for next-year A-share data
+        if: github.event.schedule == '23 3 1 12 *'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const y = new Date().getUTCFullYear() + 1;
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `补充 ${y} 年 A 股休市安排`,
+              body: `沪深北交易所通常在本月公布 ${y} 年节假日休市安排。\n\n` +
+                    `请把新的休市区间填进 \`build_ics.py\` 的 \`CN_CLOSED_RANGES\`（以及 \`CN_WEEKEND_EXTRA\`），` +
+                    `提交后 Actions 会自动重新生成并刷新 jsDelivr 缓存。`
+            });
